@@ -2,6 +2,14 @@
   "name": "releasepace-js",
   "version": "1.0.0",
   "description": "Official JavaScript/TypeScript SDK for ReleasePace feature flags",
+  "homepage": "https://releasepace.pages.dev",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/releasepace/releasepace-js.git"
+  },
+  "bugs": {
+    "url": "https://github.com/releasepace/releasepace-js/issues"
+  },
   "main": "dist/index.js",
   "module": "dist/index.mjs",
   "types": "dist/index.d.ts",

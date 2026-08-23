@@ -1,6 +1,6 @@
 # releasepace-js
 
-Official JavaScript / TypeScript SDK for [ReleasePace](https://releasepace.io) — production-grade feature flags.
+Official JavaScript / TypeScript SDK for [ReleasePace](https://releasepace.pages.dev) — production-grade feature flags.
 
 Works in: **Browser · Node.js 18+ · Deno · Bun · Cloudflare Workers · React**
 
@@ -144,4 +144,4 @@ const rp = new ReleasePace({
 
 ## License
 
-MIT © [ReleasePace](https://releasepace.io)
+MIT © [ReleasePace](https://releasepace.pages.dev)
