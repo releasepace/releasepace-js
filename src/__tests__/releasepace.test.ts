@@ -149,13 +149,16 @@ describe('ReleasePace client', () => {
   // ── Context ────────────────────────────────────────────────
   it('setContext merges new keys', async () => {
     await rp.connect()
-    rp.setContext({ userId: 'u1', country: 'IN' })
-    rp.setContext({ plan: 'pro' })
-    // Verify context is passed in URL
+    await rp.setContext({ userId: 'u1', country: 'IN' })
+    await rp.setContext({ plan: 'pro' })
+    // Context is no longer appended to the features URL as ctx_* query
+    // params — the API never read them, so it was silently discarded.
+    // In local mode it is applied here; in remote mode it is POSTed
+    // to /evaluate. Either way it now actually affects the outcome.
+    expect(rp.getEvaluationMode()).toBe('local')
     await rp.refresh()
     const url = (global.fetch as ReturnType<typeof vi.fn>).mock.calls.at(-1)[0] as string
-    expect(url).toContain('ctx_userId=u1')
-    expect(url).toContain('ctx_plan=pro')
+    expect(url).not.toContain('ctx_userId')
   })
 
   // ── Snapshot ───────────────────────────────────────────────
