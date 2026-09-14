@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { murmur3_32, bucketOf, inRollout } from '../bucketing'
 import { evaluate, FlagStateInput } from '../evaluation'
-import vectors from '../../fixtures/bucketing-vectors.json'
+import vectors from '../fixtures/bucketing-vectors.json'
 
 /**
  * Cross-SDK conformance.
