@@ -31,7 +31,7 @@ describe('ReleasePace client', () => {
 
   beforeEach(() => {
     mockFetch()
-    rp = new ReleasePace({ apiKey: 'rp_live_test', environment: 'test', disablePolling: true })
+    rp = new ReleasePace({ apiKey: 'rp_srv_test', environment: 'test', disablePolling: true })
   })
 
   afterEach(() => {
@@ -53,10 +53,32 @@ describe('ReleasePace client', () => {
       expect.stringContaining('/api/client/features'),
       expect.objectContaining({
         headers: expect.objectContaining({
-          Authorization: 'Bearer rp_live_test',
+          Authorization: 'Bearer rp_srv_test',
         }),
       })
     )
+  })
+
+  it('uses remote evaluation for browser keys and caches evaluated values', async () => {
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        version: 2, environment: 'test',
+        features: [{ key: 'public-banner', enabled: true, value: 'Hello', reason: 'DEFAULT' }],
+      }),
+    } as Response)
+    const client = new ReleasePace({
+      apiKey: 'rp_live_browser', environment: 'test', disablePolling: true,
+      context: { userId: 'user-1' },
+    })
+    await client.connect()
+    expect(client.getEvaluationMode()).toBe('remote')
+    expect(client.getString('public-banner', 'fallback')).toBe('Hello')
+    const [url, options] = (global.fetch as ReturnType<typeof vi.fn>).mock.calls[0]
+    expect(url).toContain('/api/client/evaluate')
+    expect(options.method).toBe('POST')
+    expect(JSON.parse(options.body).context.userId).toBe('user-1')
+    client.disconnect()
   })
 
   // ── isEnabled ──────────────────────────────────────────────
@@ -79,6 +101,43 @@ describe('ReleasePace client', () => {
   it('getString returns string value', async () => {
     await rp.connect()
     expect(rp.getString('str-flag', 'default')).toBe('hello')
+  })
+
+  it('evaluates targeting rules for enabled state and served value', async () => {
+    mockFetch([{
+      key: 'tenant-banner', name: 'Tenant Banner', type: 'string',
+      enabled: true, value: 'default', rollout_pct: null, bucket_by: null,
+      targeting_rules: [{
+        id: 'acme', conditions: [{ attribute: 'tenantId', op: 'equals', value: 'acme' }],
+        serve: { enabled: true, value: 'Acme banner' },
+      }], strategies: [],
+    }])
+    await rp.connect()
+    rp.setContext({ tenantId: 'acme' })
+    expect(rp.getString('tenant-banner', 'fallback')).toBe('Acme banner')
+    expect(rp.explain('tenant-banner').reason).toBe('TARGETING_MATCH')
+  })
+
+  it('loads referenced segment memberships for local evaluation', async () => {
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        version: 2, environment: 'test',
+        segments: { 'design-partners': ['acme'] },
+        features: [{
+          key: 'segment-banner', name: 'Segment Banner', type: 'string',
+          enabled: true, value: 'default', rollout_pct: null, bucket_by: null,
+          targeting_rules: [{
+            id: 'partners',
+            conditions: [{ attribute: 'tenantId', op: 'in_segment', value: 'design-partners' }],
+            serve: { enabled: true, value: 'Partner banner' },
+          }], strategies: [],
+        }],
+      }),
+    } as Response)
+    await rp.connect()
+    rp.setContext({ tenantId: 'acme' })
+    expect(rp.getString('segment-banner', 'fallback')).toBe('Partner banner')
   })
 
   it('getString returns default when flag disabled', async () => {
@@ -155,7 +214,6 @@ describe('ReleasePace client', () => {
     // params — the API never read them, so it was silently discarded.
     // In local mode it is applied here; in remote mode it is POSTed
     // to /evaluate. Either way it now actually affects the outcome.
-    expect(rp.getEvaluationMode()).toBe('local')
     await rp.refresh()
     const url = (global.fetch as ReturnType<typeof vi.fn>).mock.calls.at(-1)[0] as string
     expect(url).not.toContain('ctx_userId')

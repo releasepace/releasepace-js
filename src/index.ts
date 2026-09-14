@@ -9,6 +9,8 @@
  *   if (fk.isEnabled('new-checkout')) { ... }
  */
 
+import { evaluate, EvalResult, SegmentIndex } from "./evaluation";
+
 export interface ReleasePaceOptions {
   apiKey: string;
   environment?: string;
@@ -27,7 +29,10 @@ export interface Flag {
   enabled: boolean;
   value: string | number | boolean | object | null;
   rollout_pct: number | null;
-  strategies: Strategy[];
+  bucket_by?: "userId" | "tenantId" | null;
+  targeting_rules?: import("./evaluation").TargetingRule[];
+  strategies?: Strategy[];
+  reason?: EvalResult["reason"];
 }
 
 export interface Strategy {
@@ -52,6 +57,8 @@ export class ReleasePace {
   private pollTimer: ReturnType<typeof setInterval> | null = null;
   private fetchPromise: Promise<void> | null = null;
   private connected = false;
+  private segments: SegmentIndex = {};
+  private remoteResults = new Map<string, EvalResult>();
 
   constructor(opts: ReleasePaceOptions) {
     this.opts = {
@@ -90,22 +97,28 @@ export class ReleasePace {
 
   /** Check if a boolean flag is enabled. Returns false if flag not found. */
   isEnabled(key: string): boolean {
-    const flag = this.cache.get(key);
-    if (!flag) return false;
-    if (!flag.enabled) return false;
-    // Gradual rollout check (sticky by key hash if no userId in context)
-    if (flag.rollout_pct !== null && flag.rollout_pct < 100) {
-      const id = this.opts.context["userId"] || this.opts.context["sessionId"] || key;
-      return hashBucket(id + key) < flag.rollout_pct;
+    return this.explain(key).enabled;
+  }
+
+  /** Return the local evaluation result, including its reason. */
+  explain(key: string): EvalResult {
+    if (this.getEvaluationMode() === "remote") {
+      return this.remoteResults.get(key) ?? { key, enabled: false, value: null, reason: "NOT_FOUND" };
     }
-    return true;
+    const flag = this.cache.get(key);
+    if (!flag) return { key, enabled: false, value: null, reason: "NOT_FOUND" };
+    return evaluate({
+      ...flag,
+      bucket_by: flag.bucket_by ?? null,
+      targeting_rules: flag.targeting_rules ?? [],
+    }, this.opts.context, this.segments);
   }
 
   /** Get a flag's value. Returns defaultValue if flag not found or disabled. */
   getValue<T = unknown>(key: string, defaultValue: T): T {
-    const flag = this.cache.get(key);
-    if (!flag || !flag.enabled) return defaultValue;
-    return (flag.value as T) ?? defaultValue;
+    const result = this.explain(key);
+    if (!result.enabled) return defaultValue;
+    return (result.value as T) ?? defaultValue;
   }
 
   /** Get a string flag value. */
@@ -133,9 +146,15 @@ export class ReleasePace {
     return this.snapshot;
   }
 
+  /** Client keys use remote evaluation; server keys download rules for local evaluation. */
+  getEvaluationMode(): "local" | "remote" {
+    return this.opts.apiKey.startsWith("rp_live_") ? "remote" : "local";
+  }
+
   /** Set or update evaluation context (userId, country, etc.) */
   setContext(context: Record<string, string>): void {
     this.opts.context = { ...this.opts.context, ...context };
+    if (this.connected && this.getEvaluationMode() === "remote") void this.fetchFlags();
   }
 
   private async fetchFlags(): Promise<void> {
@@ -144,18 +163,19 @@ export class ReleasePace {
 
     this.fetchPromise = (async () => {
       try {
-        const url = new URL(`${this.opts.apiUrl}/api/client/features`);
-        url.searchParams.set("environment", this.opts.environment);
-        for (const [k, v] of Object.entries(this.opts.context)) {
-          url.searchParams.set(`ctx_${k}`, v);
-        }
-
+        const mode = this.getEvaluationMode();
+        const url = new URL(`${this.opts.apiUrl}/api/client/${mode === "local" ? "features" : "evaluate"}`);
+        if (mode === "local") url.searchParams.set("environment", this.opts.environment);
         const response = await fetch(url.toString(), {
+          method: mode === "local" ? "GET" : "POST",
           headers: {
             Authorization: `Bearer ${this.opts.apiKey}`,
             "Content-Type": "application/json",
             "X-ReleasePace-SDK": "js/1.0.0",
           },
+          ...(mode === "remote"
+            ? { body: JSON.stringify({ environment: this.opts.environment, context: this.opts.context }) }
+            : {}),
           // In Node 18+ fetch does not cache – explicit no-store
           cache: "no-store",
         });
@@ -164,11 +184,28 @@ export class ReleasePace {
           throw new Error(`ReleasePace API error ${response.status}: ${await response.text()}`);
         }
 
-        const data: ReleasePaceSnapshot & { features: Flag[] } = await response.json();
-        this.snapshot = { ...data, fetchedAt: new Date() };
+        const data: ReleasePaceSnapshot & { features: any[]; segments?: Record<string, string[]> } = await response.json();
+        this.remoteResults = new Map(
+          mode === "remote"
+            ? data.features.map((feature) => [feature.key, feature as EvalResult])
+            : []
+        );
+        this.segments = Object.fromEntries(
+          Object.entries(data.segments ?? {}).map(([key, members]) => [key, new Set(members)])
+        );
+        const features: Flag[] = mode === "local"
+          ? data.features
+          : data.features.map((feature) => ({
+              ...feature,
+              rollout_pct: null,
+              bucket_by: null,
+              targeting_rules: [],
+              strategies: [],
+            }));
+        this.snapshot = { ...data, features, fetchedAt: new Date() };
 
         const updated: Flag[] = [];
-        for (const flag of data.features) {
+        for (const flag of features) {
           const prev = this.cache.get(flag.key);
           if (!prev || JSON.stringify(prev) !== JSON.stringify(flag)) {
             updated.push(flag);
@@ -178,7 +215,7 @@ export class ReleasePace {
 
         // Remove flags that no longer exist
         for (const key of this.cache.keys()) {
-          if (!data.features.find((f: Flag) => f.key === key)) {
+          if (!features.find((f: Flag) => f.key === key)) {
             this.cache.delete(key);
           }
         }
@@ -198,16 +235,6 @@ export class ReleasePace {
       this.fetchPromise = null;
     }
   }
-}
-
-/** Deterministic 0-99 bucket for gradual rollout (djb2 hash) */
-function hashBucket(input: string): number {
-  let hash = 5381;
-  for (let i = 0; i < input.length; i++) {
-    hash = ((hash << 5) + hash) ^ input.charCodeAt(i);
-    hash = hash & hash; // convert to 32-bit int
-  }
-  return Math.abs(hash) % 100;
 }
 
 /** React hook (tree-shakeable – only bundled if imported) */

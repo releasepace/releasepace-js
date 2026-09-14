@@ -27,7 +27,7 @@ pnpm add releasepace-js
 import { ReleasePace } from 'releasepace-js'
 
 const rp = new ReleasePace({
-  apiKey:      'rp_live_xxxxxxxxxxxx',   // from ReleasePace dashboard → API Keys
+  apiKey:      'rp_srv_xxxxxxxxxxxx',   // server SDK key; use rp_live_ in browser/React
   environment: 'production',
 })
 
@@ -47,6 +47,8 @@ const cfg   = rp.getJSON('feature-config', {})
 ---
 
 ## React
+
+Browser keys (rp_live_) use remote evaluation. Only flags marked "Expose to browser and mobile SDKs" in the dashboard are returned to them.
 
 ```tsx
 import { ReleasePaceProvider, useFlag } from 'releasepace-js/react'

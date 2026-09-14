@@ -63,6 +63,7 @@ export type EvalContext = Record<string, string | undefined>;
 export type SegmentIndex = Record<string, Set<string>>;
 
 export type EvalReason =
+  | "NOT_FOUND"
   | "KILL_SWITCH"
   | "TARGETING_MATCH"
   | "TARGETING_MATCH_ROLLOUT_EXCLUDED"
