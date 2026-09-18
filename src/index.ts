@@ -96,12 +96,12 @@ export class ReleasePace {
   }
 
   /** Check if a boolean flag is enabled. Returns false if flag not found. */
-  isEnabled(key: string): boolean {
-    return this.explain(key).enabled;
+  isEnabled(key: string, context?: Record<string, string>): boolean {
+    return this.explain(key, context).enabled;
   }
 
   /** Return the local evaluation result, including its reason. */
-  explain(key: string): EvalResult {
+  explain(key: string, context?: Record<string, string>): EvalResult {
     if (this.getEvaluationMode() === "remote") {
       return this.remoteResults.get(key) ?? { key, enabled: false, value: null, reason: "NOT_FOUND" };
     }
@@ -111,7 +111,7 @@ export class ReleasePace {
       ...flag,
       bucket_by: flag.bucket_by ?? null,
       targeting_rules: flag.targeting_rules ?? [],
-    }, this.opts.context, this.segments);
+    }, context ?? this.opts.context, this.segments);
   }
 
   /** Get a flag's value. Returns defaultValue if flag not found or disabled. */

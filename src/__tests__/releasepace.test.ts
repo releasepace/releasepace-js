@@ -219,6 +219,27 @@ describe('ReleasePace client', () => {
     expect(url).not.toContain('ctx_userId')
   })
 
+  it('evaluates overlapping requests with independent context', async () => {
+    mockFetch([{
+      key: 'tenant-feature', name: 'Tenant feature', type: 'boolean',
+      enabled: true, value: null, rollout_pct: null, bucket_by: null,
+      targeting_rules: [{
+        id: 'target-acme',
+        conditions: [{ attribute: 'tenantId', op: 'equals', value: 'acme' }],
+        serve: { enabled: true },
+      }],
+      strategies: [],
+    }])
+    await rp.connect()
+    const results = await Promise.all([
+      Promise.resolve().then(() => rp.explain('tenant-feature', { userId: 'u1', tenantId: 'acme' })),
+      Promise.resolve().then(() => rp.explain('tenant-feature', { userId: 'u2', tenantId: 'other' })),
+    ])
+    expect(results[0].reason).toBe('TARGETING_MATCH')
+    expect(results[1].reason).toBe('DEFAULT')
+    expect(rp.explain('tenant-feature', { userId: 'u3' }).reason).toBe('DEFAULT')
+  })
+
   // ── Snapshot ───────────────────────────────────────────────
   it('getSnapshot returns last successful snapshot', async () => {
     await rp.connect()

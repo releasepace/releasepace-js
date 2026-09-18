@@ -93,7 +93,8 @@ function Checkout() {
 | `connect()` | `Promise<Snapshot>` | Fetch flags and start polling |
 | `disconnect()` | `void` | Stop polling |
 | `refresh()` | `Promise<void>` | Force immediate re-fetch |
-| `isEnabled(key)` | `boolean` | Check boolean flag |
+| `isEnabled(key, context?)` | `boolean` | Check boolean flag with optional request context |
+| `explain(key, context?)` | `EvalResult` | Explain local evaluation with optional request context |
 | `getString(key, default)` | `string` | Get string flag value |
 | `getNumber(key, default)` | `number` | Get number flag value |
 | `getJSON<T>(key, default)` | `T` | Get JSON flag value |
@@ -110,6 +111,16 @@ Flags with a `rollout_pct` (0–100) use sticky bucketing by `userId`:
 rp.setContext({ userId: 'user-123' })
 // Same user always gets the same result for the same flag
 if (rp.isEnabled('new-feature')) { ... }
+```
+
+For a shared server client, pass context to each evaluation so concurrent
+requests cannot retain one another's attributes:
+
+```ts
+const enabled = rp.isEnabled('new-feature', {
+  userId: session.user.id,
+  tenantId: session.organization.id,
+})
 ```
 
 ---
