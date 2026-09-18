@@ -28,7 +28,12 @@ jobs:
           cache: npm
 
       - name: Set package version from tag
-        run: npm version "${VERSION#v}" --no-git-tag-version
+        run: |
+          target_version="${VERSION#v}"
+          current_version="$(node -p "require('./package.json').version")"
+          if [ "$current_version" != "$target_version" ]; then
+            npm version "$target_version" --no-git-tag-version
+          fi
         env:
           VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name }}
 
