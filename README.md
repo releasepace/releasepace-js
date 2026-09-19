@@ -79,7 +79,7 @@ function Checkout() {
 |--------|------|---------|-------------|
 | `apiKey` | `string` | required | SDK key from your dashboard |
 | `environment` | `string` | `"production"` | Environment slug |
-| `apiUrl` | `string` | `https://api.releasepace.io` | Override API URL |
+| `apiUrl` | `string` | `https://api-prod.releasepace.workers.dev` | Override API URL |
 | `pollInterval` | `number` | `30000` | Poll interval in ms |
 | `disablePolling` | `boolean` | `false` | Disable background polling |
 | `context` | `Record<string,string>` | `{}` | Evaluation context (userId, country…) |

@@ -47,7 +47,7 @@ export interface ReleasePaceSnapshot {
   fetchedAt: Date;
 }
 
-const DEFAULT_API_URL = "https://api.releasepace.io";
+const DEFAULT_API_URL = "https://api-prod.releasepace.workers.dev";
 const DEFAULT_POLL_MS = 30_000;
 
 export class ReleasePace {
